@@ -108,7 +108,7 @@
   <!-- SALDO CARD -->
   <div class="relative group overflow-hidden bg-white/10 backdrop-blur-xl rounded-3xl mb-6 shadow-lg">
     <div id="saldoSlider"
-        class="flex transition-transform duration-300 ease-out touch-pan-y">
+        class="flex w-full transition-transform duration-300 ease-out touch-pan-y">
     </div>
       <!-- Arrow -->
       <button onclick="nextWallet()"
@@ -757,7 +757,7 @@ document.addEventListener("DOMContentLoaded", () => {
   fetchWallets(); // ❌ jangan render di luar
 });
 
-let currentTranslate = 0;
+let currentX = 0;
 let isDragging = false;
 
 const slider = document.getElementById("saldoSlider");
@@ -765,29 +765,25 @@ const slider = document.getElementById("saldoSlider");
 slider.addEventListener("touchstart", e => {
   startX = e.touches[0].clientX;
   isDragging = true;
-  slider.classList.remove("transition-transform");
+  slider.style.transition = "none";
 });
 
 slider.addEventListener("touchmove", e => {
   if (!isDragging) return;
 
-  const currentX = e.touches[0].clientX;
+  currentX = e.touches[0].clientX;
   const diff = currentX - startX;
 
   slider.style.transform =
     `translateX(calc(-${currentIndex * 100}% + ${diff}px))`;
 });
 
-slider.addEventListener("touchend", e => {
+slider.addEventListener("touchend", () => {
   if (!isDragging) return;
   isDragging = false;
 
-  const endX = e.changedTouches[0].clientX;
-  const diff = endX - startX;
-
-  slider.classList.add("transition-transform");
-
-  const threshold = 60; // jarak minimal swipe
+  const diff = currentX - startX;
+  const threshold = slider.offsetWidth * 0.25;
 
   if (diff < -threshold && currentIndex < wallets.length - 1) {
     currentIndex++;
@@ -795,8 +791,10 @@ slider.addEventListener("touchend", e => {
     currentIndex--;
   }
 
+  slider.style.transition = "transform 0.3s ease";
   updateSlide();
 });
+
 
 function updateSlide() {
   slider.style.transform =
