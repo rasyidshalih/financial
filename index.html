@@ -55,7 +55,37 @@
   #tabelData {
     scroll-behavior: smooth;
   }
+  /* =====================
+   EDIT MODE LOCK
+   ===================== */
+  body.editing * {
+    pointer-events: none;
+  }
+  body.editing form,
+  body.editing form * {
+    pointer-events: auto;
+  }
+  #uiLock {
+    pointer-events: none;
+  }
+  .edit-active {
+    position: relative;
+    z-index: 50;
+  }
 </style>
+
+<script>
+  function updateWalletUI() {
+    document
+      .querySelectorAll('.wallet-btn')
+      .forEach(b => b.classList.remove('bg-blue-600'));
+
+    document
+      .getElementById('btn-' + activeWallet)
+      .classList.add('bg-blue-600');
+  }
+</script>
+
 </head>
 
 <body class="bg-gradient-to-b from-gray-900 to-black text-gray-100 min-h-screen">
@@ -73,6 +103,22 @@
 
   <!-- SALDO CARD -->
   <div class="bg-white/10 backdrop-blur-xl rounded-3xl p-6 mb-6 shadow-lg">
+        
+    <div class="flex gap-2 mb-4 relative z-50">
+      <button type="button"
+        id="btn-BRI"
+        onclick="setWallet('BRI')"
+        class="wallet-btn px-4 py-2 rounded-xl bg-white/10 hover:bg-white/5">
+        BRI
+      </button>
+      <button type="button"
+        id="btn-Maybank"
+        onclick="setWallet('Maybank')"
+        class="wallet-btn px-4 py-2 rounded-xl bg-white/10 hover:bg-white/5">
+        Maybank
+      </button>
+    </div>
+
     <p class="text-gray-400 text-sm">Saldo</p>
     <p id="saldo" class="text-3xl font-bold mt-1">Rp 0</p>
 
@@ -100,6 +146,15 @@
         class="w-full bg-blue-600 active:bg-blue-700 transition rounded-2xl py-3 font-semibold">
         Simpan
     </button>
+    <button
+    type="button"
+    id="btnCancel"
+    onclick="cancelEdit()"
+    class="w-full border border-white/20
+          rounded-2xl py-3 font-semibold
+          text-gray-300 hidden">
+    Batal
+  </button>
   </form>
 </div>
 
@@ -110,7 +165,6 @@
             pr-1 scrollbar-thin scrollbar-thumb-white/10">
         </div>
     </div>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -144,6 +198,8 @@ let editId = null;
 let collapsedDates = JSON.parse(
   localStorage.getItem('collapsedDates') || '{}'
 );
+let activeWallet = 'BRI';
+let isEditing = false;
 
 const tanggalEl = document.getElementById('tanggal');
 const jumlahEl = document.getElementById('jumlah');
@@ -154,6 +210,7 @@ window.onload = async () => {
   // load local dulu (instant)
   const local = JSON.parse(localStorage.getItem('keuangan')) || [];
   data = local;
+  updateWalletTitle();
   render();
   // sync dari Supabase
   await loadFromSupabase();
@@ -172,7 +229,8 @@ async function loadFromSupabase() {
     id: r.id,              // 🔑 WAJIB
     tanggal: r.tanggal,
     keterangan: r.keterangan,
-    jumlah: r.jumlah
+    jumlah: r.jumlah,
+    wallet: r.wallet || 'BRI'
   }));
   localStorage.setItem('keuangan', JSON.stringify(data));
   render();
@@ -241,41 +299,59 @@ async function simpan() {
   // MODE EDIT
   // =========================
   if (editId !== null) {
-    const idx = editIndex;   // 🔒 kunci index
-    const id = editId;       // 🔒 kunci supabase id
+    const idx = editIndex;
+    const id = editId;
     const oldData = { ...data[idx] };
-    // 🟡 OPTIMISTIC UPDATE (UI dulu)
+
+    // ambil value SEKARANG (sebelum reset)
+    const newTanggal = tanggalEl.value;
+    const newKet = ketEl.value;
+    const newJumlah = jumlah;
+
+    // optimistic UI
     data[idx] = {
       ...oldData,
-      tanggal: tanggalEl.value,
-      keterangan: ketEl.value,
-      jumlah
+      tanggal: newTanggal,
+      keterangan: newKet,
+      jumlah: newJumlah
     };
     localStorage.setItem('keuangan', JSON.stringify(data));
     render();
-    // ✨ animasi card
-    setTimeout(() => {
-      const el = document.querySelector(`[data-id="${id}"]`);
-      if (el) el.classList.add('updated');
-    }, 50);
-    reset(); // aman, karena id & idx sudah dikunci
-    // 🔄 SYNC KE SUPABASE
-    const { error } = await db
-      .from('keuangan')
-      .update({
-        tanggal: oldData.tanggal !== tanggalEl.value ? tanggalEl.value : undefined,
-        keterangan: oldData.keterangan !== ketEl.value ? ketEl.value : undefined,
-        jumlah: oldData.jumlah !== jumlah ? jumlah : undefined
-      })
-      .eq('id', id);
-    // 🔴 ROLLBACK
-    if (error) {
-      console.error(error);
-      alert('Gagal sync, perubahan dibatalkan');
-      data[idx] = oldData;
-      localStorage.setItem('keuangan', JSON.stringify(data));
-      render();
+
+    // =====================
+    // SAFE UPDATE SUPABASE
+    // =====================
+    const updates = {};
+
+    if (oldData.tanggal !== newTanggal) {
+      updates.tanggal = newTanggal;
     }
+    if (oldData.keterangan !== newKet) {
+      updates.keterangan = newKet;
+    }
+    if (oldData.jumlah !== newJumlah) {
+      updates.jumlah = newJumlah;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      const { error } = await db
+        .from('keuangan')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) {
+        console.error(error);
+        alert('Gagal sync, perubahan dibatalkan');
+        data[idx] = oldData;
+        localStorage.setItem('keuangan', JSON.stringify(data));
+        render();
+      }
+    }
+
+    // 🔻 BARU RESET & UNLOCK SETELAH UPDATE
+    exitEditMode();
+    reset();
+
     return;
   }
   // =========================
@@ -287,7 +363,8 @@ async function simpan() {
     .insert({
       tanggal: tanggalEl.value,
       keterangan: ketEl.value,
-      jumlah
+      jumlah,
+      wallet: activeWallet
     })
     .select()
     .single();
@@ -310,18 +387,24 @@ function reset() {
   editId = null; // 🔑 PENTING
   document.getElementById('headerTitle').innerText = 'Keuangan';
   document.getElementById('headerSub').innerText = 'Ringkasan hari ini';
+  isEditing = false;
+  document.getElementById('btnCancel').classList.add('hidden');
 }
 
 function render() {
   let masuk = 0, keluar = 0;
   const wrap = document.getElementById('tabelData');
+  const filtered = data.filter(
+    d => d.wallet === activeWallet
+  );
+
   wrap.innerHTML = '';
 
   // ======================
   // GROUP BY TANGGAL
   // ======================
   const groups = {};
-  data.forEach((d, index) => {
+  filtered.forEach((d, index) => {
     if (!groups[d.tanggal]) groups[d.tanggal] = [];
     groups[d.tanggal].push({ ...d, _index: index });
 
@@ -403,15 +486,16 @@ function render() {
                         bg-black/40 backdrop-blur-xl
                         translate-x-full group-hover:translate-x-0
                         transition-transform duration-300">
-              <button onclick="editData(${d._index})"
-                class="w-9 h-9 rounded-xl bg-blue-500/20">✏️</button>
-              <button onclick="hapusData(${d._index})"
-                class="w-9 h-9 rounded-xl bg-red-500/20">🗑️</button>
+              <button data-id="${d.id}"
+                class="btn-edit w-9 h-9 rounded-xl bg-blue-500/20 pointer-events-auto">✏️</button>
+              <button data-id="${d.id}"
+                class="btn-delete w-9 h-9 rounded-xl bg-red-500/20 pointer-events-auto">🗑️</button>
             </div>
 
             <!-- CARD -->
             <div class="bg-white/5 p-4 pr-24 flex justify-between items-center
-                        group-hover:-translate-x-20 transition">
+                        group-hover:-translate-x-20 transition
+                        group-hover:pointer-events-none">
               <div>
                 <p class="text-sm">${d.keterangan}</p>
                 <p class="text-xs text-gray-400">${d.tanggal}</p>
@@ -430,7 +514,6 @@ function render() {
   saldo.innerText = formatRupiah(masuk - keluar);
 }
 
-
 function editData(i) {
   editIndex = i;
   const d = data[i];
@@ -447,6 +530,16 @@ function editData(i) {
   document.getElementById('headerTitle').innerText = 'Edit Transaksi';
   document.getElementById('headerSub').innerText =
     'Perbarui data lalu tekan Simpan';
+  isEditing = true;
+  document.getElementById('btnCancel').classList.remove('hidden');
+  document.body.classList.add('editing');
+}
+
+function editDataById(id) {
+  if (!id) return;
+  const i = data.findIndex(d => String(d.id) === String(id));
+  if (i === -1) return;
+  editData(i);
 }
 
 let lastDeleted = null;
@@ -470,6 +563,13 @@ async function hapusData(i) {
   console.log('DELETE TRY');
 }
 
+function hapusDataById(id) {
+  if (!id) return;
+  const i = data.findIndex(d => String(d.id) === String(id));
+  if (i === -1) return;
+  hapusData(i);
+}
+
 function showToast() {
   const t = document.getElementById('toast');
   t.classList.remove('hidden');
@@ -490,7 +590,6 @@ function undoDelete() {
   render();
 }
 
-
 let startX = 0;
 let swipedIndex = null;
 
@@ -506,6 +605,55 @@ function onTouchEnd(e) {
     swipedIndex = null;
   }
 }
+
+function setWallet(w) {
+  console.log('SWITCH WALLET:', w);
+  if (isEditing) return;
+  activeWallet = w;
+  localStorage.setItem('activeWallet', w);
+  updateWalletTitle();
+  updateWalletUI();
+  render();
+}
+
+document.addEventListener('click', (e) => {
+  const editBtn = e.target.closest('.btn-edit');
+  const delBtn  = e.target.closest('.btn-delete');
+
+  if (editBtn) {
+    const id = editBtn.dataset.id;
+    editDataById(id);
+  }
+
+  if (delBtn) {
+    const id = delBtn.dataset.id;
+    hapusDataById(id);
+  }
+});
+
+function updateWalletTitle() {
+  const title = document.getElementById("headerTitle");
+  if (!title) return;
+
+  title.innerHTML = `
+    Keuangan ·
+    <span class="text-2xl font-semibold px-2 py-0 rounded-xl bg-white/5">
+      ${activeWallet}
+    </span>
+  `;
+}
+
+function cancelEdit() {
+  reset();
+  exitEditMode();
+}
+
+function exitEditMode() {
+  isEditing = false;
+  document.body.classList.remove('editing');
+  document.getElementById('btnCancel').classList.add('hidden');
+}
+
 
 </script>
 
