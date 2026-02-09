@@ -11,6 +11,7 @@
 <link rel="apple-touch-icon" href="icon.png">
 
 <script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css">
 
 <style>
   body {
@@ -72,6 +73,9 @@
     position: relative;
     z-index: 50;
   }
+  #saldoSlider {
+    will-change: transform;
+  }
 </style>
 
 <script>
@@ -102,36 +106,25 @@
   </header>
 
   <!-- SALDO CARD -->
-  <div class="bg-white/10 backdrop-blur-xl rounded-3xl p-6 mb-6 shadow-lg">
-        
-    <div class="flex gap-2 mb-4 relative z-50">
-      <button type="button"
-        id="btn-BRI"
-        onclick="setWallet('BRI')"
-        class="wallet-btn px-4 py-2 rounded-xl bg-white/10 hover:bg-white/5">
-        BRI
-      </button>
-      <button type="button"
-        id="btn-Maybank"
-        onclick="setWallet('Maybank')"
-        class="wallet-btn px-4 py-2 rounded-xl bg-white/10 hover:bg-white/5">
-        Maybank
-      </button>
+  <div class="relative group overflow-hidden bg-white/10 backdrop-blur-xl rounded-3xl mb-6 shadow-lg">
+    <div id="saldoSlider"
+        class="flex transition-transform duration-300 ease-out touch-pan-y">
     </div>
-
-    <p class="text-gray-400 text-sm">Saldo</p>
-    <p id="saldo" class="text-3xl font-bold mt-1">Rp 0</p>
-
-    <div class="flex justify-between mt-4 text-sm">
-      <div>
-        <p class="text-gray-400">Masuk</p>
-        <p id="totalMasuk" class="text-green-400 font-medium">Rp 0</p>
+      <!-- Arrow -->
+      <button onclick="nextWallet()"
+        class="absolute right-5 top-1/2 -translate-y-1/2 z-10
+              w-9 h-9 rounded-full
+              bg-white/10 hover:bg-white/20
+              opacity-0 pointer-events-none
+              group-hover:opacity-100 group-hover:pointer-events-auto
+              transition-all duration-300
+              group-hover:translate-x-1">
+        <i class="bi bi-arrow-right-circle"></i>
+      </button>
+      <!-- SLIDER -->
+      <div id="saldoSlider"
+          class="flex transition-transform duration-300 ease-out">
       </div>
-      <div>
-        <p class="text-gray-400">Keluar</p>
-        <p id="totalKeluar" class="text-red-400 font-medium">Rp 0</p>
-      </div>
-    </div>
   </div>
 
   <!-- INPUT -->
@@ -210,8 +203,13 @@ window.onload = async () => {
   // load local dulu (instant)
   const local = JSON.parse(localStorage.getItem('keuangan')) || [];
   data = local;
+  activeWallet =
+    localStorage.getItem('activeWallet') || 'BRI';
+  walletIndex = wallets.indexOf(activeWallet);
+  if (walletIndex < 0) walletIndex = 0;
   updateWalletTitle();
   render();
+  renderSaldoSlider();   // 🔑 penting
   // sync dari Supabase
   await loadFromSupabase();
 };
@@ -654,6 +652,156 @@ function exitEditMode() {
   document.getElementById('btnCancel').classList.add('hidden');
 }
 
+const wallets = ['BRI', 'Maybank'];
+let walletIndex = 0;
+renderSaldoSlider();
+
+function renderSaldoSlider() {
+  const slider = document.getElementById('saldoSlider');
+  if (!slider) return;
+
+  slider.innerHTML = '';
+
+  wallets.forEach(w => {
+    const filtered = data.filter(d => d.wallet === w);
+
+    let masuk = 0, keluar = 0;
+    filtered.forEach(d => {
+      d.jumlah >= 0
+        ? masuk += d.jumlah
+        : keluar += Math.abs(d.jumlah);
+    });
+
+    const saldo = masuk - keluar;
+
+    slider.innerHTML += `
+      <div class="min-w-full">
+        <div class="bg-gray-800 rounded-3xl p-6 shadow-lg">
+          <p class="text-gray-400 text-sm">Saldo</p>
+          <p class="text-3xl font-bold mt-1">
+            ${formatRupiah(saldo)}
+          </p>
+
+          <div class="flex justify-between mt-6 text-sm">
+            <div>
+              <p class="text-gray-400">Masuk</p>
+              <p class="text-green-400 font-medium">
+                ${formatRupiah(masuk)}
+              </p>
+            </div>
+            <div>
+              <p class="text-gray-400">Keluar</p>
+              <p class="text-red-400 font-medium">
+                ${formatRupiah(keluar)}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  slider.style.transform =
+    `translateX(-${walletIndex * 100}%)`;
+}
+
+
+function nextWallet() {
+  if (isEditing) return;
+  walletIndex = (walletIndex + 1) % wallets.length;
+  syncWallet();
+}
+
+function prevWallet() {
+  if (isEditing) return;
+  walletIndex =
+    (walletIndex - 1 + wallets.length) % wallets.length;
+  syncWallet();
+}
+
+function syncWallet() {
+  activeWallet = wallets[walletIndex];
+  localStorage.setItem('activeWallet', activeWallet);
+  updateWalletTitle();
+  renderSaldoSlider();
+  render(); // list transaksi
+}
+
+let currentIndex = 0;
+
+function renderWallet() {
+  const slider = document.getElementById("saldoSlider");
+  slider.innerHTML = wallets.map(wallet => `
+    <div class="min-w-full px-4">
+      <div class="wallet-card">
+        <p class="wallet-name">${w}</p>
+        <p class="wallet-balance">${saldo}</p>
+      </div>
+    </div>
+  `).join("");
+  slider.style.transform = `translateX(-${currentIndex * 100}%)`;
+}
+
+async function fetchWallets() {
+  const { data, error } = await supabase
+    .from("wallets")
+    .select("*");
+  if (error) {
+    console.error(error);
+    return;
+  }
+  wallets = data;
+  renderWallet(); // ✅ PINDAHKAN KE SINI
+}
+document.addEventListener("DOMContentLoaded", () => {
+  fetchWallets(); // ❌ jangan render di luar
+});
+
+let currentTranslate = 0;
+let isDragging = false;
+
+const slider = document.getElementById("saldoSlider");
+
+slider.addEventListener("touchstart", e => {
+  startX = e.touches[0].clientX;
+  isDragging = true;
+  slider.classList.remove("transition-transform");
+});
+
+slider.addEventListener("touchmove", e => {
+  if (!isDragging) return;
+
+  const currentX = e.touches[0].clientX;
+  const diff = currentX - startX;
+
+  slider.style.transform =
+    `translateX(calc(-${currentIndex * 100}% + ${diff}px))`;
+});
+
+slider.addEventListener("touchend", e => {
+  if (!isDragging) return;
+  isDragging = false;
+
+  const endX = e.changedTouches[0].clientX;
+  const diff = endX - startX;
+
+  slider.classList.add("transition-transform");
+
+  const threshold = 60; // jarak minimal swipe
+
+  if (diff < -threshold && currentIndex < wallets.length - 1) {
+    currentIndex++;
+  } else if (diff > threshold && currentIndex > 0) {
+    currentIndex--;
+  }
+
+  updateSlide();
+});
+
+function updateSlide() {
+  slider.style.transform =
+    `translateX(-${currentIndex * 100}%)`;
+}
 
 </script>
 
