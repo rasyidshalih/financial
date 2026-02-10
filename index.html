@@ -82,17 +82,6 @@
         will-change: transform;
       }
     </style>
-
-    <script>
-      function updateWalletUI() {
-        document
-          .querySelectorAll(".wallet-btn")
-          .forEach((b) => b.classList.remove("bg-blue-600"));
-        document
-          .getElementById("btn-" + activeWallet)
-          .classList.add("bg-blue-600");
-      }
-    </script>
   </head>
 
   <body
@@ -165,13 +154,40 @@
         </form>
       </div>
 
-      <!-- LIST -->
+      <!-- TRADING SUMMARY (hanya muncul di wallet Trading) -->
       <div>
-        <h2 class="text-lg font-semibold mb-3">Riwayat Transaksi</h2>
         <div
-          id="tabelData"
-          class="space-y-3 max-h-[70vh] lg:max-h-[80vh] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10"
-        ></div>
+          id="tradingSummary"
+          class="hidden max-w-7xl mx-auto mt-1 bg-white/5 rounded-3xl p-5"
+        >
+          <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
+            <i class="bi bi-graph-up-arrow"></i> Trading Stats
+          </h3>
+          <!-- Stats ringkas -->
+          <div class="grid grid-cols-3 gap-4 mb-5 text-center">
+            <div>
+              <p class="text-xs text-gray-400">Total Trade</p>
+              <p id="totalTrades" class="text-xl font-bold">0</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Win / Loss</p>
+              <p id="winLoss" class="text-xl font-bold">0 / 0</p>
+            </div>
+            <div>
+              <p class="text-xs text-gray-400">Win Rate</p>
+              <p id="winRate" class="text-xl font-bold text-green-400">0%</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- LIST -->
+        <div>
+          <h2 class="text-lg font-semibold mb-3">Riwayat Transaksi</h2>
+          <div
+            id="tabelData"
+            class="space-y-3 max-h-[70vh] lg:max-h-[80vh] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10"
+          ></div>
+        </div>
       </div>
     </div>
 
@@ -231,15 +247,11 @@
       );
       let activeWallet = "BRI";
       let isEditing = false;
-      const wallets = ["BRI", "Maybank"];
+      const wallets = ["BRI", "Maybank", "Trading"];
       let walletIndex = 0;
-      let currentIndex = 0;
-      let currentX = 0;
+      let startX = 0;
       let isDragging = false;
-      // swipe gesture
-      let touchStartX = 0;
-      let touchCurrentX = 0;
-      let isSwiping = false;
+      let swipedIndex = null;
 
       const tanggalEl = document.getElementById("tanggal");
       const jumlahEl = document.getElementById("jumlah");
@@ -407,8 +419,8 @@
 
       /* RENDER LIST */
       function render() {
-        let masuk = 0,
-          keluar = 0;
+        let masuk = 0;
+        let keluar = 0;
         const wrap = document.getElementById("tabelData");
         const filtered = data.filter((d) => d.wallet === activeWallet);
 
@@ -508,9 +520,6 @@
               `;
             });
           });
-        totalMasuk.innerText = formatRupiah(masuk);
-        totalKeluar.innerText = formatRupiah(keluar);
-        saldo.innerText = formatRupiah(masuk - keluar);
       }
 
       /* EDIT DATA */
@@ -604,9 +613,6 @@
         document.getElementById("btnCancel").classList.add("hidden");
       }
 
-      let startX = 0;
-      let swipedIndex = null;
-
       function onTouchStart(e, i) {
         startX = e.touches[0].clientX;
         swipedIndex = i;
@@ -626,7 +632,6 @@
         activeWallet = w;
         localStorage.setItem("activeWallet", w);
         updateWalletTitle();
-        updateWalletUI();
         render();
       }
 
@@ -644,9 +649,11 @@
       function syncWallet() {
         activeWallet = wallets[walletIndex];
         localStorage.setItem("activeWallet", activeWallet);
-        updateWalletTitle();
-        renderSaldoSlider();
-        render(); // list transaksi
+        updateWalletTitle(); // update header "Keuangan · BRI"
+        renderSaldoSlider(); // pastikan slider di posisi yang benar
+        render(); // render ulang list transaksi sesuai activeWallet
+        renderTradingSummary(); // jika ada summary trading
+        localStorage.setItem("walletIndex", walletIndex);
       }
       function renderWallet() {
         const slider = document.getElementById("saldoSlider");
@@ -662,10 +669,10 @@
             `,
           )
           .join("");
-        slider.style.transform = `translateX(-${currentIndex * 100}%)`;
+        slider.style.transform = `translateX(-${walletIndex * 100}%)`;
       }
       async function fetchWallets() {
-        const { data, error } = await supabase.from("wallets").select("*");
+        const { data, error } = await db.from("wallets").select("*");
         if (error) {
           console.error(error);
           return;
@@ -679,32 +686,39 @@
 
       const slider = document.getElementById("saldoSlider");
       slider.addEventListener("touchstart", (e) => {
-        if (state.isEditing) return;
-        touchStartX = e.touches[0].clientX;
-        isSwiping = true;
+        startX = e.touches[0].clientX;
+        isDragging = true;
         slider.style.transition = "none";
       });
+
       slider.addEventListener("touchmove", (e) => {
-        if (!isSwiping) return;
-        touchCurrentX = e.touches[0].clientX;
-        const diff = touchCurrentX - touchStartX;
-        slider.style.transform = `translateX(calc(-${state.walletIndex * 100}% + ${diff}px))`;
+        if (!isDragging) return;
+        const currentX = e.touches[0].clientX;
+        const diff = currentX - startX;
+        slider.style.transform = `translateX(calc(-${walletIndex * 100}% + ${diff}px))`;
       });
-      slider.addEventListener("touchend", () => {
-        if (!isSwiping) return;
-        isSwiping = false;
-        const diff = touchCurrentX - touchStartX;
-        const threshold = slider.offsetWidth * 0.25;
-        if (diff < -threshold && state.walletIndex < state.wallets.length - 1) {
-          state.walletIndex++;
-        } else if (diff > threshold && state.walletIndex > 0) {
-          state.walletIndex--;
+
+      slider.addEventListener("touchend", (e) => {
+        if (!isDragging) return;
+        isDragging = false;
+
+        const endX = e.changedTouches[0].clientX;
+        const diff = endX - startX;
+        const threshold = slider.offsetWidth * 0.3; // 30% lebar card untuk trigger swipe
+
+        if (diff < -threshold && walletIndex < wallets.length - 1) {
+          walletIndex++;
+        } else if (diff > threshold && walletIndex > 0) {
+          walletIndex--;
         }
-        localStorage.setItem("activeWallet", state.wallets[state.walletIndex]);
-        slider.style.transition = "transform 0.3s ease";
-        renderSaldoSlider();
-        render();
+
+        slider.style.transition = "transform 0.3s ease-out";
+        syncWallet(); // <-- INI YANG PENTING! Sinkronkan semuanya
       });
+
+      function updateSlide() {
+        slider.style.transform = `translateX(-${walletIndex * 100}%)`;
+      }
 
       /* UPDATE WALLET */
       function updateWalletTitle() {
@@ -722,7 +736,9 @@
       function renderSaldoSlider() {
         const slider = document.getElementById("saldoSlider");
         if (!slider) return;
-        slider.innerHTML = "";
+
+        slider.innerHTML = ""; // bersihkan dulu
+
         wallets.forEach((w) => {
           const filtered = data.filter((d) => d.wallet === w);
           let masuk = 0,
@@ -733,33 +749,59 @@
               : (keluar += Math.abs(d.jumlah));
           });
           const saldo = masuk - keluar;
+
           slider.innerHTML += `
             <div class="min-w-full">
               <div class="bg-gray-800 rounded-3xl p-6 shadow-lg">
-                <p class="text-gray-400 text-sm">Saldo</p>
-                <p class="text-3xl font-bold mt-1">
-                  ${formatRupiah(saldo)}
-                </p>
-
+                <p class="text-gray-400 text-sm">${w}</p>
+                <p class="text-3xl font-bold mt-1">${formatRupiah(saldo)}</p>
                 <div class="flex justify-between mt-6 text-sm">
                   <div>
                     <p class="text-gray-400">Masuk</p>
-                    <p class="text-green-400 font-medium">
-                      ${formatRupiah(masuk)}
-                    </p>
+                    <p class="text-green-400 font-medium">${formatRupiah(masuk)}</p>
                   </div>
                   <div>
                     <p class="text-gray-400">Keluar</p>
-                    <p class="text-red-400 font-medium">
-                      ${formatRupiah(keluar)}
-                    </p>
+                    <p class="text-red-400 font-medium">${formatRupiah(keluar)}</p>
                   </div>
                 </div>
               </div>
             </div>
           `;
         });
+
+        // Pastikan posisi slider sesuai walletIndex
         slider.style.transform = `translateX(-${walletIndex * 100}%)`;
+      }
+
+      /* TRADING */
+      function renderTradingSummary() {
+        const container = document.getElementById("tradingSummary");
+        const isTrading = activeWallet === "Trading";
+        container.classList.toggle("hidden", !isTrading);
+        if (!isTrading) return;
+        const trades = data.filter((d) => d.wallet === "Trading");
+        if (trades.length === 0) return;
+        const wins = trades.filter((t) => t.jumlah > 0);
+        const losses = trades.filter((t) => t.jumlah < 0);
+        const net = trades.reduce((s, t) => s + t.jumlah, 0);
+        const avgWin = wins.length ? wins.reduce((s, t) => s + t.jumlah, 0) : 0;
+        const avgLoss = losses.length
+          ? Math.abs(losses.reduce((s, t) => s + t.jumlah, 0))
+          : 0;
+        document.getElementById("tradingSummary").innerHTML = `
+          <div class="grid grid-cols-2 gap-4 text-sm">
+            <div>Total Trade<br><b>${trades.length}</b></div>
+            <div>Win Rate<br><b>${((wins.length / trades.length) * 100).toFixed(1)}%</b></div>
+            <div>Net P/L<br><b class="${net >= 0 ? "text-green-400" : "text-red-400"}">
+              ${formatRupiah(net)}
+            </b></div>
+            <div>Avg Win / Loss<br>
+              <span class="text-green-400">${formatRupiah(avgWin)}</span> /
+              <span class="text-red-400">${formatRupiah(avgLoss)}</span>
+            </div>
+          </div>
+        `;
       }
     </script>
     <div
