@@ -270,6 +270,7 @@
 
         renderSaldoSlider();
         updateWalletTitle();
+        renderTradingSummary();
         render();
 
         // sync dari Supabase
@@ -349,6 +350,7 @@
           };
           localStorage.setItem("keuangan", JSON.stringify(data));
           render();
+          renderSaldoSlider();
 
           // SAFE UPDATE SUPABASE
           const updates = {};
@@ -372,6 +374,7 @@
               data[idx] = oldData;
               localStorage.setItem("keuangan", JSON.stringify(data));
               render();
+              renderSaldoSlider();
             }
           }
 
@@ -561,6 +564,7 @@
         data.splice(i, 1);
         localStorage.setItem("keuangan", JSON.stringify(data));
         render();
+        renderSaldoSlider();
         showToast();
         // supabase delete
         if (item.id) {
@@ -590,6 +594,7 @@
         lastDeleted = null;
         document.getElementById("toast").classList.add("hidden");
         render();
+        renderSaldoSlider();
       }
       document.addEventListener("click", (e) => {
         const editBtn = e.target.closest(".btn-edit");
@@ -815,5 +820,3 @@
     </div>
   </body>
 </html>
-
-
