@@ -236,6 +236,7 @@
         }));
         localStorage.setItem("keuangan", JSON.stringify(data));
         render();
+        renderSaldoSlider();
       }
 
       /* STATE */
@@ -350,7 +351,6 @@
           };
           localStorage.setItem("keuangan", JSON.stringify(data));
           render();
-          renderSaldoSlider();
 
           // SAFE UPDATE SUPABASE
           const updates = {};
@@ -381,6 +381,8 @@
           // BARU RESET & UNLOCK SETELAH UPDATE
           exitEditMode();
           reset();
+          render();
+          renderSaldoSlider();
           return;
         }
 
@@ -405,6 +407,7 @@
         localStorage.setItem("keuangan", JSON.stringify(data));
         reset();
         render();
+        renderSaldoSlider();
       }
 
       /* RESET */
